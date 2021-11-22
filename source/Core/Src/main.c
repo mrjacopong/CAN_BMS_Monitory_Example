@@ -45,6 +45,13 @@ CAN_HandleTypeDef hcan;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+/* Private variables ---------------------------------------------------------*/
+/*CAN_FilterTypeDef sFilterConfig;
+CAN_TxHeaderTypeDef TxHeader;
+CAN_RxHeaderTypeDef RxHeader;
+uint8_t TxData[8];
+uint8_t RxData[8];
+uint32_t TxMailbox;*/
 
 /* USER CODE END PV */
 
@@ -59,7 +66,37 @@ static void MX_CAN_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+	CAN_TxHeaderTypeDef TxHeader;
+	CAN_RxHeaderTypeDef RxHeader;
 
+	uint32_t TxMailbox[4];
+
+	uint8_t TxData[8];
+	uint8_t RxData[8];
+	uint8_t count = 1;
+
+	void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+		if(GPIO_Pin == B1_Pin) // If The INT Source Is EXTI Line9 (A9 Pin)
+		    {
+			HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_SET); // set on The Output (LED) Pin
+		    //now send can message
+		    TxData[0] = count;
+		    if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, &TxData[0], &TxMailbox[0]) != HAL_OK)
+		          {
+		        	  Error_Handler();
+		          }
+		    count++;
+		    HAL_Delay(500); //debouncing
+		    HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_RESET); // set off The Output (LED) Pin
+		    }
+	}
+
+	void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+	{
+		HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData);
+		//HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
+
+	}
 /* USER CODE END 0 */
 
 /**
@@ -93,6 +130,29 @@ int main(void)
   MX_USART2_UART_Init();
   MX_CAN_Init();
   /* USER CODE BEGIN 2 */
+  if (HAL_CAN_Start(&hcan) != HAL_OK)
+        {
+      	  Error_Handler();
+        }
+  HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
+
+  TxHeader.DLC = 1;
+    TxHeader.ExtId = 0;
+    TxHeader.IDE = CAN_ID_STD;
+    TxHeader.RTR = CAN_RTR_DATA;
+    TxHeader.StdId = 0x123;
+    TxHeader.TransmitGlobalTime = DISABLE;
+
+    TxData[0] = 0x01;
+    TxData[1] = 0x02;
+    TxData[2] = 0x03;
+    TxData[3] = 0x04;
+
+    if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, &TxData[0], &TxMailbox[0]) != HAL_OK)
+      {
+    	  Error_Handler();
+      }
+
 
   /* USER CODE END 2 */
 
@@ -100,9 +160,15 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  //HAL_Delay(100);
+	  //if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, &TxData[0], &TxMailbox[0]) != HAL_OK)
+	  //     {
+	  //  	  Error_Handler();
+	  //   }
 	  //just to try that everything works
-	  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_13);
-	  HAL_Delay(100);
+	  //HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_13);
+	  //HAL_Delay(100);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -122,12 +188,13 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -163,10 +230,10 @@ static void MX_CAN_Init(void)
 
   /* USER CODE END CAN_Init 1 */
   hcan.Instance = CAN;
-  hcan.Init.Prescaler = 16;
+  hcan.Init.Prescaler = 3 ;
   hcan.Init.Mode = CAN_MODE_NORMAL;
   hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan.Init.TimeSeg1 = CAN_BS1_1TQ;
+  hcan.Init.TimeSeg1 = CAN_BS1_10TQ;
   hcan.Init.TimeSeg2 = CAN_BS2_1TQ;
   hcan.Init.TimeTriggeredMode = DISABLE;
   hcan.Init.AutoBusOff = DISABLE;
@@ -179,6 +246,20 @@ static void MX_CAN_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN_Init 2 */
+  CAN_FilterTypeDef canfilterconfig;
+
+    canfilterconfig.FilterActivation = CAN_FILTER_ENABLE;
+    canfilterconfig.FilterBank = 10;  // anything between 0 to SlaveStartFilterBank
+    canfilterconfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+    canfilterconfig.FilterIdHigh = 0x103<<5;
+    canfilterconfig.FilterIdLow = 0x0000;
+    canfilterconfig.FilterMaskIdHigh = 0x1<<13;
+    canfilterconfig.FilterMaskIdLow = 0x0000;
+    canfilterconfig.FilterMode = CAN_FILTERMODE_IDMASK;
+    canfilterconfig.FilterScale = CAN_FILTERSCALE_32BIT;
+    canfilterconfig.SlaveStartFilterBank = 13  ;  // 13 to 27 are assigned to slave CAN (CAN 2) OR 0 to 12 are assgned to CAN1
+
+    HAL_CAN_ConfigFilter(&hcan, &canfilterconfig);
 
   /* USER CODE END CAN_Init 2 */
 
@@ -250,9 +331,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
+
+
 
 /* USER CODE END 4 */
 
@@ -264,6 +351,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
+  HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_SET);
   __disable_irq();
   while (1)
   {
