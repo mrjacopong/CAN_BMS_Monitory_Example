@@ -22,7 +22,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -61,6 +62,9 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_CAN_Init(void);
 /* USER CODE BEGIN PFP */
+void debugPrint(UART_HandleTypeDef *huart, char _out[]);
+void debugPrintln(UART_HandleTypeDef *huart, char _out[]);
+void PrintlnEightBit(UART_HandleTypeDef *huart,uint8_t TxData[]);
 
 /* USER CODE END PFP */
 
@@ -81,20 +85,27 @@ static void MX_CAN_Init(void);
 			HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_SET); // set on The Output (LED) Pin
 		    //now send can message
 		    TxData[0] = count;
-		    if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, &TxData[0], &TxMailbox[0]) != HAL_OK)
+		    if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox[0]) != HAL_OK)
 		          {
 		        	  Error_Handler();
 		          }
 		    count++;
+
+		    debugPrintln(&huart2, "Some data has been sent:");
+		    PrintlnEightBit(&huart2, TxData);
 		    HAL_Delay(500); //debouncing
 		    HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_RESET); // set off The Output (LED) Pin
+
 		    }
 	}
 
 	void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 	{
 		HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData);
-		//HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
+		debugPrintln(&huart2, "Some data has been received:");
+		PrintlnEightBit(&huart2, RxData);
+		if (RxData[0]==5)
+			debugPrintln(&huart2, "Received 5!!!!!");
 
 	}
 /* USER CODE END 0 */
@@ -136,7 +147,7 @@ int main(void)
         }
   HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
 
-  TxHeader.DLC = 1;
+  	TxHeader.DLC = 8;
     TxHeader.ExtId = 0;
     TxHeader.IDE = CAN_ID_STD;
     TxHeader.RTR = CAN_RTR_DATA;
@@ -153,21 +164,22 @@ int main(void)
     	  Error_Handler();
       }
 
-
+    debugPrintln(&huart2, "Hello World !!!");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  //HAL_Delay(100);
-	  //if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, &TxData[0], &TxMailbox[0]) != HAL_OK)
-	  //     {
-	  //  	  Error_Handler();
-	  //   }
+	  /*HAL_Delay(200);
+	  HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_SET);
+	  if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, &TxData[0], &TxMailbox[0]) != HAL_OK)
+	       {
+	    	  Error_Handler();
+	     }
 	  //just to try that everything works
-	  //HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_13);
-	  //HAL_Delay(100);
+	  HAL_Delay(200);
+	  HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_RESET);*/
 
     /* USER CODE END WHILE */
 
@@ -231,7 +243,7 @@ static void MX_CAN_Init(void)
   /* USER CODE END CAN_Init 1 */
   hcan.Instance = CAN;
   hcan.Init.Prescaler = 3 ;
-  hcan.Init.Mode = CAN_MODE_NORMAL;
+  hcan.Init.Mode = CAN_MODE_LOOPBACK;
   hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan.Init.TimeSeg1 = CAN_BS1_10TQ;
   hcan.Init.TimeSeg2 = CAN_BS2_1TQ;
@@ -251,9 +263,9 @@ static void MX_CAN_Init(void)
     canfilterconfig.FilterActivation = CAN_FILTER_ENABLE;
     canfilterconfig.FilterBank = 10;  // anything between 0 to SlaveStartFilterBank
     canfilterconfig.FilterFIFOAssignment = CAN_RX_FIFO0;
-    canfilterconfig.FilterIdHigh = 0x103<<5;
+    canfilterconfig.FilterIdHigh = 0x0;
     canfilterconfig.FilterIdLow = 0x0000;
-    canfilterconfig.FilterMaskIdHigh = 0x1<<13;
+    canfilterconfig.FilterMaskIdHigh = 0x0;
     canfilterconfig.FilterMaskIdLow = 0x0000;
     canfilterconfig.FilterMode = CAN_FILTERMODE_IDMASK;
     canfilterconfig.FilterScale = CAN_FILTERSCALE_32BIT;
@@ -281,7 +293,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 38400;
+  huart2.Init.BaudRate = 9600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -338,8 +350,30 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+//normal print
+void debugPrint(UART_HandleTypeDef *huart, char _out[]){
+ HAL_UART_Transmit(huart, (uint8_t *) _out, strlen(_out), 100);
+}
 
+//to print with newline
+void debugPrintln(UART_HandleTypeDef *huart, char _out[]){
+ HAL_UART_Transmit(huart, (uint8_t *) _out, strlen(_out), 100);
+ char newline[2] = "\r\n";
+ HAL_UART_Transmit(huart, (uint8_t *) newline, 2, 10);
+}
 
+void PrintlnEightBit(UART_HandleTypeDef *huart,uint8_t TxData[]){
+	char string[(8*4+1)];
+	    for (int i = 0; i<8; i++){
+		    sprintf(&string[(i*4)],"%04d",TxData[i]);
+	        string[(i*4)]=' ';
+	    }
+	string[8*4+1] = '\0';
+
+    HAL_UART_Transmit(huart, (uint8_t *) string, strlen(string), 100);
+    char newline[2] = "\r\n";
+    HAL_UART_Transmit(huart, (uint8_t *) newline, 2, 10);
+}
 
 /* USER CODE END 4 */
 
