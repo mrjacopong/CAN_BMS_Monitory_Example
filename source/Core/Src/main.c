@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,6 +34,13 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define BOARD1 1  // comment out this line when compiling for board #2
+#if defined(BOARD1)
+    const uint32_t NODEID = 0x123;  // node 1
+#else
+    const uint32_t NODEID = 0x124;  // node 2
+#endif
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -93,6 +101,7 @@ void PrintlnEightBit(UART_HandleTypeDef *huart,uint8_t TxData[]);
 
 		    debugPrintln(&huart2, "Some data has been sent:");
 		    PrintlnEightBit(&huart2, TxData);
+		    debugPrintln(&huart2, "\r\n************************************");
 		    HAL_Delay(500); //debouncing
 		    HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_RESET); // set off The Output (LED) Pin
 
@@ -104,8 +113,18 @@ void PrintlnEightBit(UART_HandleTypeDef *huart,uint8_t TxData[]);
 		HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData);
 		debugPrintln(&huart2, "Some data has been received:");
 		PrintlnEightBit(&huart2, RxData);
-		if (RxData[0]==5)
-			debugPrintln(&huart2, "Received 5!!!!!");
+
+		if (RxHeader.StdId==0x111)
+			debugPrintln(&huart2, "è arrivata la batteria!! NODEID:0x111");
+		if (RxHeader.StdId==0x112)
+			debugPrintln(&huart2, "è arrivata la corrente!! NODEID:0x111");
+		if (RxHeader.StdId==0x113)
+			debugPrintln(&huart2, "è arrivata la temperatura!! NODEID:0x111");
+		if (RxHeader.StdId==0x123)
+			debugPrintln(&huart2, "From NODEID:0x123");
+		if (RxHeader.StdId==0x124)
+			debugPrintln(&huart2, "From NODEID:0x124");
+		debugPrintln(&huart2, "************************************");
 
 	}
 /* USER CODE END 0 */
@@ -151,7 +170,7 @@ int main(void)
     TxHeader.ExtId = 0;
     TxHeader.IDE = CAN_ID_STD;
     TxHeader.RTR = CAN_RTR_DATA;
-    TxHeader.StdId = 0x123;
+    TxHeader.StdId = NODEID;
     TxHeader.TransmitGlobalTime = DISABLE;
 
     TxData[0] = 0x01;
@@ -159,12 +178,17 @@ int main(void)
     TxData[2] = 0x03;
     TxData[3] = 0x04;
 
-    if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, &TxData[0], &TxMailbox[0]) != HAL_OK)
-      {
-    	  Error_Handler();
-      }
+    char NODEIDstr[4];
 
-    debugPrintln(&huart2, "Hello World !!!");
+    debugPrintln(&huart2, "************************************");
+    debugPrintln(&huart2, "*This node is turning on correctly!*");
+    debugPrint(&huart2, "* node ID: ");
+    //debugPrintln(&huart2, "0x123"); // node 1
+    //debugPrintln(&huart2, "0x124"); // node 2
+    sprintf(&NODEIDstr[0],"%lx", NODEID);
+    debugPrint(&huart2, "0x");
+    debugPrintln(&huart2, NODEIDstr);
+    debugPrintln(&huart2, "************************************");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -200,13 +224,12 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
-  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -242,11 +265,11 @@ static void MX_CAN_Init(void)
 
   /* USER CODE END CAN_Init 1 */
   hcan.Instance = CAN;
-  hcan.Init.Prescaler = 3 ;
-  hcan.Init.Mode = CAN_MODE_LOOPBACK;
+  hcan.Init.Prescaler = 2;
+  hcan.Init.Mode = CAN_MODE_NORMAL;
   hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan.Init.TimeSeg1 = CAN_BS1_10TQ;
-  hcan.Init.TimeSeg2 = CAN_BS2_1TQ;
+  hcan.Init.TimeSeg1 = CAN_BS1_13TQ;
+  hcan.Init.TimeSeg2 = CAN_BS2_2TQ;
   hcan.Init.TimeTriggeredMode = DISABLE;
   hcan.Init.AutoBusOff = DISABLE;
   hcan.Init.AutoWakeUp = DISABLE;
