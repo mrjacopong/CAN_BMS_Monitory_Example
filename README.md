@@ -3,6 +3,7 @@ This is the repository is used to store and share a little university project fo
 
 ## What is it about?
 We wanted to create a step by step guide for beginners of CAN bus, and we hope that with this repo you will be able to create and implement your CAN.
+For more information please read our [report.]{https://github.com/mrjacopong/CAN_BMS_Monitory_Example/Documents_and_Report/Report_Design-of-a-CAN-line-for-testing.pdf}
 
 ## What is the goal?
 The goal was to simulate a can bus of a battery pack, where we are able to look at: **Voltages, Current and Temperatures**.
@@ -20,8 +21,8 @@ Yes! we have also a video for that, feel free to copy the code, we have only mod
  - **[STM32CubeIDE](https://www.st.com/en/development-tools/stm32cubeide.html)**
  - **[BusMaster](https://www.etas.com/en/applications/applications_busmaster.php)**
 
- ## Want to see how it is working?
- Look at our report, and our [super cool video we have made.](https://youtu.be/j-Kal4BvnG0)
+## Want to see how it is working?
+Look at our report, and our [super cool video we have made.](https://youtu.be/j-Kal4BvnG0)
  
 ## Who we are?
 We are [**Jacopo Ferretti**](https://www.linkedin.com/in/jacopoferretti/) and [**Rosario La Rocca**​](https://www.linkedin.com/in/rosario-la-rocca), students of [Electric Vehicle Engineering](https://corsi.unibo.it/2cycle/ElectricVehicleEngineering/index.html) at [MUNER University](https://motorvehicleuniversity.com/).
