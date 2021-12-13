@@ -3,7 +3,7 @@ This is the repository is used to store and share a little university project fo
 
 ## What is it about?
 We wanted to create a step by step guide for beginners of CAN bus, and we hope that with this repo you will be able to create and implement your CAN.
-For more information please read our [report.]{https://github.com/mrjacopong/CAN_BMS_Monitory_Example/Documents_and_Report/Report_Design-of-a-CAN-line-for-testing.pdf}
+For more information please read our [report.](https://github.com/mrjacopong/CAN_BMS_Monitory_Example/blob/main/Documents_and_Report/Report_Design-of-a-CAN-line-for-testing.pdf)
 
 ## What is the goal?
 The goal was to simulate a can bus of a battery pack, where we are able to look at: **Voltages, Current and Temperatures**.
