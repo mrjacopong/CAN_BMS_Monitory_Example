@@ -36,9 +36,13 @@
 /* USER CODE BEGIN PD */
 #define BOARD1 1  // comment out this line when compiling for board #2
 #if defined(BOARD1)
-    const uint32_t NODEID = 0x123;  // node 1
+    const uint32_t NODEID     = 0x123;   // node 1
+    const uint32_t FILTERID   = 0x111;   // voltage
+    const uint32_t FILTERMASK = 0;       // not used
 #else
-    const uint32_t NODEID = 0x124;  // node 2
+    const uint32_t NODEID     = 0x124;   // node 2
+    const uint32_t FILTERID   = 0x112;   // Current
+    const uint32_t FILTERMASK = 0x113;   // Temperature
 #endif
 
 /* USER CODE END PD */
@@ -73,27 +77,31 @@ static void MX_CAN_Init(void);
 void debugPrint(UART_HandleTypeDef *huart, char _out[]);
 void debugPrintln(UART_HandleTypeDef *huart, char _out[]);
 void PrintlnEightBit(UART_HandleTypeDef *huart,uint8_t TxData[]);
+void UnderVoltageError();
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-	CAN_TxHeaderTypeDef TxHeader;
-	CAN_RxHeaderTypeDef RxHeader;
+	CAN_TxHeaderTypeDef TxHeader;  // CAN Tx message header structure
+	CAN_RxHeaderTypeDef RxHeader;  // CAN Rx message header structure
 
-	uint32_t TxMailbox[4];
+	uint32_t TxMailbox;			   // Mailbox where Tx message is stored
 
-	uint8_t TxData[8];
-	uint8_t RxData[8];
-	uint8_t count = 1;
+	uint8_t TxData[8];			   // Vector that will contain data to be transmitted
+	uint8_t RxData[8];             // Vector that will contain data received
+	uint8_t count = 1;             // Simple counter used for debugging
 
+
+	// User button callback
 	void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
-		if(GPIO_Pin == B1_Pin) // If The INT Source Is EXTI Line9 (A9 Pin)
+		if(GPIO_Pin == B1_Pin)
 		    {
 			HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_SET); // set on The Output (LED) Pin
+
 		    //now send can message
 		    TxData[0] = count;
-		    if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox[0]) != HAL_OK)
+		    if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox) != HAL_OK)
 		          {
 		        	  Error_Handler();
 		          }
@@ -108,22 +116,58 @@ void PrintlnEightBit(UART_HandleTypeDef *huart,uint8_t TxData[]);
 		    }
 	}
 
+	// CAN Rx callback
 	void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 	{
+		char temp_string[16]; //temporaney 15 character string to print numerical values
 		HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData);
 		debugPrintln(&huart2, "Some data has been received:");
 		PrintlnEightBit(&huart2, RxData);
+		#if defined(BOARD1)
+		/* BEGIN node 1 code */
+		if (RxHeader.StdId==0x111){    //voltages
+			float mult_factor_v = 1000;
+			float voltage[4];
+			for (int i=0 ; i<=3 ; i++){
+				voltage[i] = (RxData[i*2+1]<<8|RxData[i*2])/mult_factor_v;
+				debugPrint(&huart2, "Battery Voltage [");
+				sprintf(temp_string,"%d", i);
+				debugPrint(&huart2, temp_string);
+				debugPrint(&huart2, "] = ");
+				sprintf(temp_string,"%.3f", voltage[i]);
+				debugPrint(&huart2, temp_string);
+				debugPrintln(&huart2, " V");
+				if (voltage[i]<=2.2){
+					UnderVoltageError();
+				}
+			}
+		}
+		/* END   node 1 code */
+		#else
+		/* BEGIN node 2 code */
+		if (RxHeader.StdId==0x112){    //current
+			float mult_factor_I = 10;
+			float current = (RxData[1]<<8|RxData[0])/mult_factor_I;
+			debugPrint(&huart2, "Current = ");
+			sprintf(temp_string,"%.3f", current);
+			debugPrint(&huart2, temp_string);
+			debugPrintln(&huart2, " A");
+		}
+		if (RxHeader.StdId==0x113){    //temperature
+			float mult_factor_T = 100;
+			float temperature = (RxData[1]<<8|RxData[0])/mult_factor_T;
+			debugPrint(&huart2, "Temperature = ");
+			sprintf(temp_string,"%.3f", temperature);
+			debugPrint(&huart2, temp_string);
+			debugPrintln(&huart2, " deg");
+		}
 
-		if (RxHeader.StdId==0x111)
-			debugPrintln(&huart2, "è arrivata la batteria!! NODEID:0x111");
-		if (RxHeader.StdId==0x112)
-			debugPrintln(&huart2, "è arrivata la corrente!! NODEID:0x111");
-		if (RxHeader.StdId==0x113)
-			debugPrintln(&huart2, "è arrivata la temperatura!! NODEID:0x111");
-		if (RxHeader.StdId==0x123)
-			debugPrintln(&huart2, "From NODEID:0x123");
-		if (RxHeader.StdId==0x124)
-			debugPrintln(&huart2, "From NODEID:0x124");
+		/* END   node 2 code */
+		#endif
+		// print the id
+		debugPrint(&huart2, "From NODEID:0x");
+		sprintf(&temp_string[0],"%lx", RxHeader.StdId);
+		debugPrintln(&huart2, temp_string);
 		debugPrintln(&huart2, "************************************");
 
 	}
@@ -160,31 +204,30 @@ int main(void)
   MX_USART2_UART_Init();
   MX_CAN_Init();
   /* USER CODE BEGIN 2 */
-  if (HAL_CAN_Start(&hcan) != HAL_OK)
+  if (HAL_CAN_Start(&hcan) != HAL_OK)        // start can pheriperal
         {
       	  Error_Handler();
         }
-  HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
+    HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
 
-  	TxHeader.DLC = 8;
-    TxHeader.ExtId = 0;
-    TxHeader.IDE = CAN_ID_STD;
-    TxHeader.RTR = CAN_RTR_DATA;
-    TxHeader.StdId = NODEID;
-    TxHeader.TransmitGlobalTime = DISABLE;
+  	TxHeader.DLC = 8;                        // Can data lenght (8 byte)
+    TxHeader.IDE = CAN_ID_STD;               // Id lenght       (standard 11 bit)
+    TxHeader.RTR = CAN_RTR_DATA;             // Type of frame   (Data frame)
+    TxHeader.StdId = NODEID;				 // Can id          (0x123 or 0x124)
+    TxHeader.ExtId = 0;                      // Extended id     (not used)
+    TxHeader.TransmitGlobalTime = DISABLE;   //                 (disabled)
 
+    // some random data to be send
     TxData[0] = 0x01;
     TxData[1] = 0x02;
     TxData[2] = 0x03;
     TxData[3] = 0x04;
 
+    // first interaction between node and pc
     char NODEIDstr[4];
-
     debugPrintln(&huart2, "************************************");
     debugPrintln(&huart2, "*This node is turning on correctly!*");
     debugPrint(&huart2, "* node ID: ");
-    //debugPrintln(&huart2, "0x123"); // node 1
-    //debugPrintln(&huart2, "0x124"); // node 2
     sprintf(&NODEIDstr[0],"%lx", NODEID);
     debugPrint(&huart2, "0x");
     debugPrintln(&huart2, NODEIDstr);
@@ -195,15 +238,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  /*HAL_Delay(200);
-	  HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_SET);
-	  if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, &TxData[0], &TxMailbox[0]) != HAL_OK)
-	       {
-	    	  Error_Handler();
-	     }
-	  //just to try that everything works
-	  HAL_Delay(200);
-	  HAL_GPIO_WritePin(GPIOB, LD2_Pin,GPIO_PIN_RESET);*/
 
     /* USER CODE END WHILE */
 
@@ -283,18 +317,18 @@ static void MX_CAN_Init(void)
   /* USER CODE BEGIN CAN_Init 2 */
   CAN_FilterTypeDef canfilterconfig;
 
-    canfilterconfig.FilterActivation = CAN_FILTER_ENABLE;
-    canfilterconfig.FilterBank = 10;  // anything between 0 to SlaveStartFilterBank
-    canfilterconfig.FilterFIFOAssignment = CAN_RX_FIFO0;
-    canfilterconfig.FilterIdHigh = 0x0;
-    canfilterconfig.FilterIdLow = 0x0000;
-    canfilterconfig.FilterMaskIdHigh = 0x0;
-    canfilterconfig.FilterMaskIdLow = 0x0000;
-    canfilterconfig.FilterMode = CAN_FILTERMODE_IDMASK;
-    canfilterconfig.FilterScale = CAN_FILTERSCALE_32BIT;
-    canfilterconfig.SlaveStartFilterBank = 13  ;  // 13 to 27 are assigned to slave CAN (CAN 2) OR 0 to 12 are assgned to CAN1
+    canfilterconfig.FilterActivation = CAN_FILTER_ENABLE;  // Enale can filtering
+    canfilterconfig.FilterBank = 0;                        // Anything between 0 to SlaveStartFilterBank
+    canfilterconfig.FilterFIFOAssignment = CAN_RX_FIFO0;   // Filter bank to be initialized
+    canfilterconfig.FilterIdHigh = FILTERID <<5;           // Standard ID accepted (#1)
+    canfilterconfig.FilterIdLow = 0x0;                     // Extended part of ID (not used)
+    canfilterconfig.FilterMaskIdHigh = FILTERMASK <<5;     // Standard ID accepted (#2)
+    canfilterconfig.FilterMaskIdLow = 0x0;	               // Extended part of ID (not used)
+    canfilterconfig.FilterMode = CAN_FILTERMODE_IDLIST;    // Specify filter mode
+    canfilterconfig.FilterScale = CAN_FILTERSCALE_32BIT;   // Filter dimension
+    canfilterconfig.SlaveStartFilterBank = 0  ; 		   // Not important
 
-    HAL_CAN_ConfigFilter(&hcan, &canfilterconfig);
+    HAL_CAN_ConfigFilter(&hcan, &canfilterconfig);	       // Initialize the filter
 
   /* USER CODE END CAN_Init 2 */
 
@@ -378,13 +412,14 @@ void debugPrint(UART_HandleTypeDef *huart, char _out[]){
  HAL_UART_Transmit(huart, (uint8_t *) _out, strlen(_out), 100);
 }
 
-//to print with newline
+//print with newline
 void debugPrintln(UART_HandleTypeDef *huart, char _out[]){
  HAL_UART_Transmit(huart, (uint8_t *) _out, strlen(_out), 100);
  char newline[2] = "\r\n";
  HAL_UART_Transmit(huart, (uint8_t *) newline, 2, 10);
 }
 
+//print a vector of 8 uint8_t numbers
 void PrintlnEightBit(UART_HandleTypeDef *huart,uint8_t TxData[]){
 	char string[(8*4+1)];
 	    for (int i = 0; i<8; i++){
@@ -396,6 +431,23 @@ void PrintlnEightBit(UART_HandleTypeDef *huart,uint8_t TxData[]){
     HAL_UART_Transmit(huart, (uint8_t *) string, strlen(string), 100);
     char newline[2] = "\r\n";
     HAL_UART_Transmit(huart, (uint8_t *) newline, 2, 10);
+}
+
+void UnderVoltageError(){
+	unsigned char ERRORMSG[8] = "ERROR";
+	debugPrintln(&huart2, "");
+	debugPrintln(&huart2, "****************************************");
+	debugPrintln(&huart2, "* An error has occurred!: UNDERVOLTAGE *");
+	debugPrintln(&huart2, "* execution has stopped, shooting down *");
+	debugPrintln(&huart2, "****************************************");
+	if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, ERRORMSG, &TxMailbox) != HAL_OK)
+		  {
+			  Error_Handler();
+		  }
+	while(1){
+		HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
+		HAL_Delay(100);
+	}
 }
 
 /* USER CODE END 4 */
@@ -433,4 +485,3 @@ void assert_failed(uint8_t *file, uint32_t line)
 }
 #endif /* USE_FULL_ASSERT */
 
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
